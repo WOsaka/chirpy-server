@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"strings"
 	"sync/atomic"
 )
 
@@ -53,19 +54,45 @@ func validationHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	type validationResp struct {
-		Error string `json:"error,omitempty"`
-		Valid bool   `json:"valid,omitempty"`
+	// type validationResp struct {
+	// 	Error        string `json:"error,omitempty"`
+	// 	Cleaned_body string `json:"cleaned_body,omitempty"`
+	// }
+
+	// var respBody validationResp
+	chirp := params.Body
+	if len(chirp) > 140 {
+		// respBody.Error = "Chirp is to long"
+		// w.WriteHeader(400)
+		respondWithError(w, 400, "Chirp is to long")
+	} else {
+		chirp := replaceProfane(chirp)
+		respBody := struct {
+			Cleaned_body string `json:"cleaned_body"`
+		}{
+			Cleaned_body: chirp,
+		}
+		respondWithJSON(w, 200, respBody)
 	}
 
-	var respBody validationResp
-	if len(params.Body) > 140 {
-		respBody.Error = "Chirp is to long"
-		w.WriteHeader(400)
-	} else {
-		respBody.Valid = true
-		w.WriteHeader(200)
+	// dat, err := json.Marshal(respBody)
+	// if err != nil {
+	// 	log.Printf("Error marshalling JSON: %s", err)
+	// 	w.WriteHeader(500)
+	// 	return
+	// }
+	w.Header().Set("Content-Type", "application/json")
+	// w.Write(dat)
+}
+
+func respondWithError(w http.ResponseWriter, code int, msg string) {
+	type Error struct {
+		Error string `json:"error"`
 	}
+
+	var respBody Error
+	respBody.Error = msg
+	w.WriteHeader(code)
 
 	dat, err := json.Marshal(respBody)
 	if err != nil {
@@ -73,16 +100,38 @@ func validationHandler(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(500)
 		return
 	}
-	w.Header().Set("Content-Type", "application/json")
 	w.Write(dat)
 }
 
-// respondWithError(w http.ResponseWriter, code int, msg string)
-// respondWithJSON(w http.ResponseWriter, code int, payload interface{})
+func respondWithJSON(w http.ResponseWriter, code int, payload interface{}) {
+	w.WriteHeader(code)
+
+	dat, err := json.Marshal(payload)
+	if err != nil {
+		log.Printf("Error marshalling JSON: %s", err)
+		w.WriteHeader(500)
+		return
+	}
+	w.Write(dat)
+}
 
 func (cfg *apiConfig) middlewareMetricsInc(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		cfg.fileserverHits.Add(1)
 		next.ServeHTTP(w, r)
 	})
+}
+
+func replaceProfane(sentence string) string {
+	wordsToCheck := []string{"Kerfuffle", "Sharbert", "Fornax"}
+
+	for _, word := range wordsToCheck {
+		lowerWord := strings.ToLower(word)
+		if strings.Contains(sentence, word) || strings.Contains(sentence, lowerWord) {
+			sentence = strings.ReplaceAll(sentence, word, "****")
+			sentence = strings.ReplaceAll(sentence, lowerWord, "****")
+		}
+	}
+
+	return sentence
 }
