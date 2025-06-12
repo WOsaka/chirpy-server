@@ -47,72 +47,44 @@ func validationHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	decoder := json.NewDecoder(r.Body)
+	defer r.Body.Close()
+
 	params := parameters{}
 	if err := decoder.Decode(&params); err != nil {
 		log.Printf("Error decoding parameters: %s", err)
-		w.WriteHeader(500)
+		respondWithError(w, http.StatusInternalServerError, "Invalid request body")
 		return
 	}
 
-	// type validationResp struct {
-	// 	Error        string `json:"error,omitempty"`
-	// 	Cleaned_body string `json:"cleaned_body,omitempty"`
-	// }
-
-	// var respBody validationResp
 	chirp := params.Body
 	if len(chirp) > 140 {
-		// respBody.Error = "Chirp is to long"
-		// w.WriteHeader(400)
-		respondWithError(w, 400, "Chirp is to long")
-	} else {
-		chirp := replaceProfane(chirp)
-		respBody := struct {
-			Cleaned_body string `json:"cleaned_body"`
-		}{
-			Cleaned_body: chirp,
-		}
-		respondWithJSON(w, 200, respBody)
+		respondWithError(w, http.StatusBadRequest, "Chirp is too long")
+		return
 	}
 
-	// dat, err := json.Marshal(respBody)
-	// if err != nil {
-	// 	log.Printf("Error marshalling JSON: %s", err)
-	// 	w.WriteHeader(500)
-	// 	return
-	// }
+	cleaned := replaceProfane(chirp)
+	respBody := struct {
+		CleanedBody string `json:"cleaned_body"`
+	}{
+		CleanedBody: cleaned,
+	}
+	respondWithJSON(w, http.StatusOK, respBody)
+}
+
+func respondWithError(w http.ResponseWriter, code int, msg string) error {
+	return respondWithJSON(w, code, map[string]string{"error": msg})
+}
+
+func respondWithJSON(w http.ResponseWriter, code int, payload interface{}) error {
+	response, err := json.Marshal(payload)
+	if err != nil {
+		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+		return err
+	}
 	w.Header().Set("Content-Type", "application/json")
-	// w.Write(dat)
-}
-
-func respondWithError(w http.ResponseWriter, code int, msg string) {
-	type Error struct {
-		Error string `json:"error"`
-	}
-
-	var respBody Error
-	respBody.Error = msg
 	w.WriteHeader(code)
-
-	dat, err := json.Marshal(respBody)
-	if err != nil {
-		log.Printf("Error marshalling JSON: %s", err)
-		w.WriteHeader(500)
-		return
-	}
-	w.Write(dat)
-}
-
-func respondWithJSON(w http.ResponseWriter, code int, payload interface{}) {
-	w.WriteHeader(code)
-
-	dat, err := json.Marshal(payload)
-	if err != nil {
-		log.Printf("Error marshalling JSON: %s", err)
-		w.WriteHeader(500)
-		return
-	}
-	w.Write(dat)
+	w.Write(response)
+	return nil
 }
 
 func (cfg *apiConfig) middlewareMetricsInc(next http.Handler) http.Handler {
