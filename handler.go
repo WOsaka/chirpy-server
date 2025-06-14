@@ -166,18 +166,48 @@ func (cfg *apiConfig) getChirpsHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	chirps :=  []Chirp{}
+	chirps := []Chirp{}
 	for _, dbChirp := range dbChirps {
 		chirp := Chirp{
-			ID: dbChirp.ID,
+			ID:        dbChirp.ID,
 			CreatedAt: dbChirp.CreatedAt,
 			UpdatedAt: dbChirp.UpdatedAt,
-			Body: dbChirp.Body,
-			UserID: dbChirp.UserID,
+			Body:      dbChirp.Body,
+			UserID:    dbChirp.UserID,
 		}
 		chirps = append(chirps, chirp)
 	}
 	if err := respondWithJSON(w, http.StatusOK, chirps); err != nil {
+		log.Printf("Error responding with JSON: %s", err)
+		return
+	}
+}
+
+func (cfg *apiConfig) getChirpHandler(w http.ResponseWriter, r *http.Request) {
+	chirpID := r.PathValue("chirpID")
+
+	parsedChirpID, err := uuid.Parse(chirpID)
+	if err != nil {
+		respondWithError(w, http.StatusBadRequest, "Invalid user_id")
+		return
+	}
+
+	dbChirp, err := cfg.db.GetChirpByID(r.Context(), parsedChirpID)
+	if err != nil {
+		log.Printf("Error fetching chirp: %s", err)
+		respondWithError(w, http.StatusInternalServerError, "Failed to fetch chirp")
+		return
+	}
+
+	chirp := Chirp{
+		ID:        dbChirp.ID,
+		CreatedAt: dbChirp.CreatedAt,
+		UpdatedAt: dbChirp.UpdatedAt,
+		Body:      dbChirp.Body,
+		UserID:    dbChirp.UserID,
+	}
+
+	if err := respondWithJSON(w, http.StatusOK, chirp); err != nil {
 		log.Printf("Error responding with JSON: %s", err)
 		return
 	}
