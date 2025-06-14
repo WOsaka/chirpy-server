@@ -26,6 +26,14 @@ type User struct {
 	Email     string    `json:"email"`
 }
 
+type Chirp struct {
+	ID        uuid.UUID `json:"id"`
+	CreatedAt time.Time `json:"created_at"`
+	UpdatedAt time.Time `json:"updated_at"`
+	Body      string    `json:"body"`
+	UserID    uuid.UUID `json:"user_id"`
+}
+
 func healthCheckHandler(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
 
@@ -59,15 +67,15 @@ func (cfg *apiConfig) resetHandler(w http.ResponseWriter, r *http.Request) {
 	w.Write([]byte("Hits counter reset"))
 }
 
-func validationHandler(w http.ResponseWriter, r *http.Request) {
-	type parameters struct {
-		Body string `json:"body"`
+func (cfg *apiConfig) chirpHandler(w http.ResponseWriter, r *http.Request) {
+	var params struct {
+		Body   string `json:"body"`
+		UserId string `json:"user_id"`
 	}
 
 	decoder := json.NewDecoder(r.Body)
 	defer r.Body.Close()
 
-	params := parameters{}
 	if err := decoder.Decode(&params); err != nil {
 		log.Printf("Error decoding parameters: %s", err)
 		respondWithError(w, http.StatusInternalServerError, "Invalid request body")
@@ -80,13 +88,34 @@ func validationHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	cleaned := replaceProfane(chirp)
-	respBody := struct {
-		CleanedBody string `json:"cleaned_body"`
-	}{
-		CleanedBody: cleaned,
+	cleanedChirp := replaceProfane(chirp)
+	userID, err := uuid.Parse(params.UserId)
+	if err != nil {
+		respondWithError(w, http.StatusBadRequest, "Invalid user_id")
+		return
 	}
-	respondWithJSON(w, http.StatusOK, respBody)
+
+	dbChirp, err := cfg.db.CreateChirp(r.Context(), database.CreateChirpParams{
+		Body:   cleanedChirp,
+		UserID: userID,
+	})
+	if err != nil {
+		log.Printf("Error creating chirp: %s", err)
+		respondWithError(w, http.StatusInternalServerError, "Failed to create chirp")
+		return
+	}
+
+	resp := Chirp{
+		ID:        dbChirp.ID,
+		CreatedAt: dbChirp.CreatedAt,
+		UpdatedAt: dbChirp.UpdatedAt,
+		Body:      dbChirp.Body,
+		UserID:    dbChirp.UserID,
+	}
+	if err := respondWithJSON(w, http.StatusCreated, resp); err != nil {
+		log.Printf("Error responding with JSON: %s", err)
+		return
+	}
 }
 
 func (cfg *apiConfig) userHandler(w http.ResponseWriter, r *http.Request) {
