@@ -33,8 +33,9 @@ func main() {
 	mux.HandleFunc("GET /api/healthz", healthCheckHandler)
 	mux.HandleFunc("GET /admin/metrics", cfg.metricsHandler)
 	mux.HandleFunc("POST /admin/reset", cfg.resetHandler)
-	mux.HandleFunc("POST /api/chirps", cfg.chirpHandler)
-	mux.HandleFunc("POST /api/users", cfg.userHandler)
+	mux.HandleFunc("POST /api/chirps", cfg.createChirpHandler)
+	mux.HandleFunc("POST /api/users", cfg.createUserHandler)
+	mux.HandleFunc("GET /api/chirps", cfg.getChirpsHandler)
 
 	server := &http.Server{
 		Handler: mux,

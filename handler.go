@@ -67,7 +67,7 @@ func (cfg *apiConfig) resetHandler(w http.ResponseWriter, r *http.Request) {
 	w.Write([]byte("Hits counter reset"))
 }
 
-func (cfg *apiConfig) chirpHandler(w http.ResponseWriter, r *http.Request) {
+func (cfg *apiConfig) createChirpHandler(w http.ResponseWriter, r *http.Request) {
 	var params struct {
 		Body   string `json:"body"`
 		UserId string `json:"user_id"`
@@ -118,7 +118,7 @@ func (cfg *apiConfig) chirpHandler(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-func (cfg *apiConfig) userHandler(w http.ResponseWriter, r *http.Request) {
+func (cfg *apiConfig) createUserHandler(w http.ResponseWriter, r *http.Request) {
 	var params struct {
 		Email string `json:"email"`
 	}
@@ -153,10 +153,34 @@ func (cfg *apiConfig) userHandler(w http.ResponseWriter, r *http.Request) {
 
 	if err := respondWithJSON(w, http.StatusCreated, user); err != nil {
 		log.Printf("Error responding with JSON: %s", err)
-		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
 		return
 	}
 
+}
+
+func (cfg *apiConfig) getChirpsHandler(w http.ResponseWriter, r *http.Request) {
+	dbChirps, err := cfg.db.GetAllChirps(r.Context())
+	if err != nil {
+		log.Printf("Error fetching chirps: %s", err)
+		respondWithError(w, http.StatusInternalServerError, "Failed to fetch chirps")
+		return
+	}
+
+	chirps :=  []Chirp{}
+	for _, dbChirp := range dbChirps {
+		chirp := Chirp{
+			ID: dbChirp.ID,
+			CreatedAt: dbChirp.CreatedAt,
+			UpdatedAt: dbChirp.UpdatedAt,
+			Body: dbChirp.Body,
+			UserID: dbChirp.UserID,
+		}
+		chirps = append(chirps, chirp)
+	}
+	if err := respondWithJSON(w, http.StatusOK, chirps); err != nil {
+		log.Printf("Error responding with JSON: %s", err)
+		return
+	}
 }
 
 func respondWithError(w http.ResponseWriter, code int, msg string) error {
