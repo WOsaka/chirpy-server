@@ -1,6 +1,7 @@
 package auth
 
 import (
+	"net/http"
 	"testing"
 	"time"
 
@@ -153,5 +154,23 @@ func TestJWT_TamperedToken(t *testing.T) {
 	_, err = ValidateJWT(tampered, secret)
 	if err == nil {
 		t.Error("ValidateJWT should fail for tampered token")
+	}
+}
+
+func TestGetBearerToken(t *testing.T) {
+	headers := http.Header{}
+	headers.Set("Authorization", "Bearer testtoken123")
+	token, err := GetBearerToken(headers)
+	if err != nil {
+		t.Fatalf("GetBearerToken failed: %v", err)
+	}
+	if token != "testtoken123" {
+		t.Errorf("GetBearerToken returned wrong token: got %s, want %s", token, "testtoken123")
+	}
+	// Test with missing Authorization header
+	headers = http.Header{}
+	_, err = GetBearerToken(headers)
+	if err == nil {
+		t.Error("GetBearerToken should fail when Authorization header is missing")
 	}
 }
