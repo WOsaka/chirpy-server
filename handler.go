@@ -9,6 +9,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/WOsaka/chirpy-server/internal/auth"
 	"github.com/WOsaka/chirpy-server/internal/database"
 	"github.com/google/uuid"
 )
@@ -64,7 +65,7 @@ func (cfg *apiConfig) resetHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	cfg.fileserverHits.Store(0)
 	cfg.db.DeleteAllUsers(r.Context())
-	w.Write([]byte("Hits counter reset"))
+	w.Write([]byte("Hits counter and user table reset"))
 }
 
 func (cfg *apiConfig) createChirpHandler(w http.ResponseWriter, r *http.Request) {
@@ -120,7 +121,8 @@ func (cfg *apiConfig) createChirpHandler(w http.ResponseWriter, r *http.Request)
 
 func (cfg *apiConfig) createUserHandler(w http.ResponseWriter, r *http.Request) {
 	var params struct {
-		Email string `json:"email"`
+		Password string `json:"password"`
+		Email    string `json:"email"`
 	}
 
 	decoder := json.NewDecoder(r.Body)
@@ -132,7 +134,7 @@ func (cfg *apiConfig) createUserHandler(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	if params.Email == "" {
+	if params.Email == "" || params.Password == "" {
 		respondWithError(w, http.StatusBadRequest, "Email is required")
 		return
 	}
@@ -141,6 +143,22 @@ func (cfg *apiConfig) createUserHandler(w http.ResponseWriter, r *http.Request) 
 	if err != nil {
 		log.Printf("Error creating user: %s", err)
 		respondWithError(w, http.StatusInternalServerError, "Failed to create user")
+		return
+	}
+
+	hashedPassword, err := auth.HashPassword(params.Password)
+	if err != nil {
+		log.Printf("Error hashing password: %s", err)
+		respondWithError(w, http.StatusInternalServerError, "Failed to hash password")
+		return
+	}
+
+	if err := cfg.db.SetPassword(r.Context(), database.SetPasswordParams{
+		HashedPassword: hashedPassword,
+		Email:          params.Email,
+	}); err != nil {
+		log.Printf("Error setting password: %s", err)
+		respondWithError(w, http.StatusInternalServerError, "Failed to set password")
 		return
 	}
 
@@ -208,6 +226,45 @@ func (cfg *apiConfig) getChirpHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := respondWithJSON(w, http.StatusOK, chirp); err != nil {
+		log.Printf("Error responding with JSON: %s", err)
+		return
+	}
+}
+
+func (cfg *apiConfig) loginHandler(w http.ResponseWriter, r *http.Request) {
+	var params struct {
+		Password string `json:"password"`
+		Email string `json:"email"`
+	}	
+
+	defer r.Body.Close()
+	if err := json.NewDecoder(r.Body).Decode(&params); err != nil {
+		log.Printf("Error decoding parameters: %s", err)
+		respondWithError(w, http.StatusInternalServerError, "Invalid request body")
+		return
+	}
+	
+	dbUser, err := cfg.db.GetUserByEmail(r.Context(), params.Email)
+	if err != nil {
+		log.Printf("Error fetching user: %s", err)
+		respondWithError(w, http.StatusUnauthorized, "Incorrect email or password")
+		return
+	}
+	
+	if err := auth.CheckPasswordHash(dbUser.HashedPassword, params.Password); err != nil {
+		log.Printf("Error checking password: %s", err)
+		respondWithError(w, http.StatusUnauthorized, "Incorrect email or password")
+		return
+	}
+
+	user := User{
+		ID: dbUser.ID,
+		CreatedAt: dbUser.CreatedAt,
+		UpdatedAt: dbUser.UpdatedAt,
+		Email: dbUser.Email,
+	}
+
+	if err := respondWithJSON(w, http.StatusOK, user); err != nil {
 		log.Printf("Error responding with JSON: %s", err)
 		return
 	}

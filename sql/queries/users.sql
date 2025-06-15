@@ -29,3 +29,12 @@ ORDER BY created_at ASC;
 -- name: GetChirpByID :one
 SELECT * FROM chirps
 WHERE id = $1;
+
+-- name: SetPassword :exec
+UPDATE users
+SET hashed_password = $1
+WHERE email = $2;
+
+-- name: GetUserByEmail :one
+SELECT * FROM users
+WHERE email = $1;
