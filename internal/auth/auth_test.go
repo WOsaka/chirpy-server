@@ -39,7 +39,6 @@ func TestCheckPasswordHash(t *testing.T) {
 	}
 }
 
-
 func TestMakeJWTAndValidateJWT(t *testing.T) {
 	userID := uuid.New()
 	secret := "testsecret"
@@ -174,3 +173,4 @@ func TestGetBearerToken(t *testing.T) {
 		t.Error("GetBearerToken should fail when Authorization header is missing")
 	}
 }
+
