@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"log"
 	"net/http"
-	"strings"
 	"sync/atomic"
 	"time"
 
@@ -222,7 +221,7 @@ func (cfg *apiConfig) getChirpHandler(w http.ResponseWriter, r *http.Request) {
 	dbChirp, err := cfg.db.GetChirpByID(r.Context(), parsedChirpID)
 	if err != nil {
 		log.Printf("Error fetching chirp: %s", err)
-		respondWithError(w, http.StatusInternalServerError, "Failed to fetch chirp")
+		respondWithError(w, http.StatusNotFound, "Failed to fetch chirp")
 		return
 	}
 
@@ -367,39 +366,115 @@ func (cfg *apiConfig) revokeRefreshTokenHandler(w http.ResponseWriter, r *http.R
 	w.WriteHeader(http.StatusNoContent)
 }
 
-func respondWithError(w http.ResponseWriter, code int, msg string) error {
-	return respondWithJSON(w, code, map[string]string{"error": msg})
-}
-
-func respondWithJSON(w http.ResponseWriter, code int, payload interface{}) error {
-	response, err := json.Marshal(payload)
+func (cfg *apiConfig) updateCredentialsHandler(w http.ResponseWriter, r *http.Request) {
+	token, err := auth.GetBearerToken(r.Header)
 	if err != nil {
-		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
-		return err
+		log.Printf("Error getting bearer token: %s", err)
+		respondWithError(w, http.StatusUnauthorized, "Unauthorized")
+		return
 	}
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(code)
-	w.Write(response)
-	return nil
-}
 
-func (cfg *apiConfig) middlewareMetricsInc(next http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		cfg.fileserverHits.Add(1)
-		next.ServeHTTP(w, r)
+	var params struct {
+		Email    string `json:"email"`
+		Password string `json:"password"`
+	}
+	defer r.Body.Close()
+	if err := json.NewDecoder(r.Body).Decode(&params); err != nil {
+		log.Printf("Error decoding parameters: %s", err)
+		respondWithError(w, http.StatusInternalServerError, "Invalid request body")
+		return
+	}
+
+	if params.Email == "" || params.Password == "" {
+		respondWithError(w, http.StatusBadRequest, "Email and password are required")
+		return
+	}
+
+	userID, err := auth.ValidateJWT(token, cfg.jwtSecret)
+	if err != nil {
+		log.Printf("Error validating JWT: %s", err)
+		respondWithError(w, http.StatusUnauthorized, "Invalid token")
+		return
+	}
+
+	hashedPassword, err := auth.HashPassword(params.Password)
+	if err != nil {
+		log.Printf("Error hashing password: %s", err)
+		respondWithError(w, http.StatusInternalServerError, "Failed to hash password")
+		return
+	}
+
+	dbUser, err := cfg.db.UpdateUserCredentials(r.Context(), database.UpdateUserCredentialsParams{
+		ID:             userID,
+		Email:          params.Email,
+		HashedPassword: hashedPassword,
 	})
-}
-
-func replaceProfane(sentence string) string {
-	wordsToCheck := []string{"Kerfuffle", "Sharbert", "Fornax"}
-
-	for _, word := range wordsToCheck {
-		lowerWord := strings.ToLower(word)
-		if strings.Contains(sentence, word) || strings.Contains(sentence, lowerWord) {
-			sentence = strings.ReplaceAll(sentence, word, "****")
-			sentence = strings.ReplaceAll(sentence, lowerWord, "****")
-		}
+	if err != nil {
+		log.Printf("Error updating user credentials: %s", err)
+		respondWithError(w, http.StatusInternalServerError, "Failed to update user credentials")
+		return
 	}
 
-	return sentence
+	user := User{
+		ID:        dbUser.ID,
+		CreatedAt: dbUser.CreatedAt,
+		UpdatedAt: dbUser.UpdatedAt,
+		Email:     dbUser.Email,
+	}
+
+	if err := respondWithJSON(w, http.StatusOK, user); err != nil {
+		log.Printf("Error responding with JSON: %s", err)
+		return
+	}
+
+}
+
+func (cfg *apiConfig) deleteChirpHandler(w http.ResponseWriter, r *http.Request) {
+	token, err := auth.GetBearerToken(r.Header)
+	if err != nil {
+		log.Printf("Error getting bearer token: %s", err)
+		respondWithError(w, http.StatusUnauthorized, "Unauthorized")
+		return
+	}
+
+	userID, err := auth.ValidateJWT(token, cfg.jwtSecret)
+	if err != nil {
+		log.Printf("Error validating JWT: %s", err)
+		respondWithError(w, http.StatusUnauthorized, "Invalid token")
+		return
+	}
+
+	chirpID := r.PathValue("chirpID")
+	if chirpID == "" {
+		respondWithError(w, http.StatusBadRequest, "Chirp ID is required")
+		return
+	}
+
+	parsedChirpID, err := uuid.Parse(chirpID)
+	if err != nil {
+		log.Printf("Error parsing chirp ID: %s", err)
+		respondWithError(w, http.StatusBadRequest, "Invalid chirp ID")
+		return
+	}
+
+	dbChirp, err := cfg.db.GetChirpByID(r.Context(), parsedChirpID)
+	if err != nil {
+		log.Printf("Error fetching chirp: %s", err)
+		respondWithError(w, http.StatusNotFound, "Chirp not found")
+		return
+	}
+
+	if dbChirp.UserID != userID {
+		log.Printf("User %s is not authorized to delete chirp %s", userID, chirpID)
+		respondWithError(w, http.StatusForbidden, "You are not authorized to delete this chirp")
+		return
+	}
+
+	if err := cfg.db.DeleteChirpByID(r.Context(), parsedChirpID); err != nil {
+		log.Printf("Error deleting chirp: %s", err)
+		respondWithError(w, http.StatusInternalServerError, "Failed to delete chirp")
+		return
+	}
+
+	w.WriteHeader(http.StatusNoContent)
 }

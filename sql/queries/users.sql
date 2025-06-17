@@ -60,3 +60,15 @@ UPDATE refresh_tokens
 SET revoked_at = NOW(),
     updated_at = NOW()
 WHERE token = $1;
+
+-- name: UpdateUserCredentials :one
+UPDATE users
+SET email = $1,
+    hashed_password = $2,
+    updated_at = NOW()
+WHERE id = $3
+RETURNING *;
+
+-- name: DeleteChirpByID :exec
+DELETE FROM chirps
+WHERE id = $1;
