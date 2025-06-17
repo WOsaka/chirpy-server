@@ -18,6 +18,7 @@ type apiConfig struct {
 	db             *database.Queries
 	platform       string
 	jwtSecret      string
+	polkaKey       string
 }
 
 type User struct {
@@ -489,6 +490,18 @@ func (cfg *apiConfig) setChirpyRedHandler(w http.ResponseWriter, r *http.Request
 		Data  struct {
 			UserID string `json:"user_id"`
 		} `json:"data"`
+	}
+
+	apiKey, err := auth.GetAPIKey(r.Header)
+	if err != nil {
+		log.Printf("Error getting API key: %s", err)
+		respondWithError(w, http.StatusUnauthorized, "Unauthorized")
+		return
+	}
+	if apiKey != cfg.polkaKey {
+		log.Printf("Invalid API key: %s", apiKey)
+		respondWithError(w, http.StatusUnauthorized, "Forbidden")
+		return
 	}
 
 	defer r.Body.Close()
