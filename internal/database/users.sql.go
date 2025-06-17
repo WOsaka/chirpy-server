@@ -83,7 +83,7 @@ VALUES (
     NOW(),
     $1
 )
-RETURNING id, created_at, updated_at, email, hashed_password
+RETURNING id, created_at, updated_at, email, hashed_password, is_chirpy_red
 `
 
 func (q *Queries) CreateUser(ctx context.Context, email string) (User, error) {
@@ -95,6 +95,7 @@ func (q *Queries) CreateUser(ctx context.Context, email string) (User, error) {
 		&i.UpdatedAt,
 		&i.Email,
 		&i.HashedPassword,
+		&i.IsChirpyRed,
 	)
 	return i, err
 }
@@ -190,7 +191,7 @@ func (q *Queries) GetRefreshTokenByToken(ctx context.Context, token string) (Ref
 }
 
 const getUserByEmail = `-- name: GetUserByEmail :one
-SELECT id, created_at, updated_at, email, hashed_password FROM users
+SELECT id, created_at, updated_at, email, hashed_password, is_chirpy_red FROM users
 WHERE email = $1
 `
 
@@ -203,6 +204,7 @@ func (q *Queries) GetUserByEmail(ctx context.Context, email string) (User, error
 		&i.UpdatedAt,
 		&i.Email,
 		&i.HashedPassword,
+		&i.IsChirpyRed,
 	)
 	return i, err
 }
@@ -216,6 +218,18 @@ WHERE token = $1
 
 func (q *Queries) RevokeRefreshToken(ctx context.Context, token string) error {
 	_, err := q.db.ExecContext(ctx, revokeRefreshToken, token)
+	return err
+}
+
+const setChirpyRedByID = `-- name: SetChirpyRedByID :exec
+UPDATE users 
+SET is_chirpy_red = TRUE,
+    updated_at = NOW()
+WHERE id = $1
+`
+
+func (q *Queries) SetChirpyRedByID(ctx context.Context, id uuid.UUID) error {
+	_, err := q.db.ExecContext(ctx, setChirpyRedByID, id)
 	return err
 }
 
@@ -241,7 +255,7 @@ SET email = $1,
     hashed_password = $2,
     updated_at = NOW()
 WHERE id = $3
-RETURNING id, created_at, updated_at, email, hashed_password
+RETURNING id, created_at, updated_at, email, hashed_password, is_chirpy_red
 `
 
 type UpdateUserCredentialsParams struct {
@@ -259,6 +273,7 @@ func (q *Queries) UpdateUserCredentials(ctx context.Context, arg UpdateUserCrede
 		&i.UpdatedAt,
 		&i.Email,
 		&i.HashedPassword,
+		&i.IsChirpyRed,
 	)
 	return i, err
 }

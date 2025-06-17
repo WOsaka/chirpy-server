@@ -72,3 +72,9 @@ RETURNING *;
 -- name: DeleteChirpByID :exec
 DELETE FROM chirps
 WHERE id = $1;
+
+-- name: SetChirpyRedByID :exec
+UPDATE users 
+SET is_chirpy_red = TRUE,
+    updated_at = NOW()
+WHERE id = $1;

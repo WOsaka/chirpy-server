@@ -27,6 +27,7 @@ type User struct {
 	Email        string    `json:"email"`
 	Token        string    `json:"token"`
 	RefreshToken string    `json:"refresh_token"`
+	IsChirpyRed  bool      `json:"is_chirpy_red"`
 }
 
 type Chirp struct {
@@ -171,10 +172,11 @@ func (cfg *apiConfig) createUserHandler(w http.ResponseWriter, r *http.Request) 
 	}
 
 	user := User{
-		ID:        dbUser.ID,
-		CreatedAt: dbUser.CreatedAt,
-		UpdatedAt: dbUser.UpdatedAt,
-		Email:     dbUser.Email,
+		ID:          dbUser.ID,
+		CreatedAt:   dbUser.CreatedAt,
+		UpdatedAt:   dbUser.UpdatedAt,
+		Email:       dbUser.Email,
+		IsChirpyRed: dbUser.IsChirpyRed,
 	}
 
 	if err := respondWithJSON(w, http.StatusCreated, user); err != nil {
@@ -297,6 +299,7 @@ func (cfg *apiConfig) loginHandler(w http.ResponseWriter, r *http.Request) {
 		Email:        dbUser.Email,
 		Token:        jwtToken,
 		RefreshToken: refreshToken,
+		IsChirpyRed:  dbUser.IsChirpyRed,
 	}
 
 	if err := respondWithJSON(w, http.StatusOK, user); err != nil {
@@ -416,10 +419,11 @@ func (cfg *apiConfig) updateCredentialsHandler(w http.ResponseWriter, r *http.Re
 	}
 
 	user := User{
-		ID:        dbUser.ID,
-		CreatedAt: dbUser.CreatedAt,
-		UpdatedAt: dbUser.UpdatedAt,
-		Email:     dbUser.Email,
+		ID:          dbUser.ID,
+		CreatedAt:   dbUser.CreatedAt,
+		UpdatedAt:   dbUser.UpdatedAt,
+		Email:       dbUser.Email,
+		IsChirpyRed: dbUser.IsChirpyRed,
 	}
 
 	if err := respondWithJSON(w, http.StatusOK, user); err != nil {
@@ -477,4 +481,42 @@ func (cfg *apiConfig) deleteChirpHandler(w http.ResponseWriter, r *http.Request)
 	}
 
 	w.WriteHeader(http.StatusNoContent)
+}
+
+func (cfg *apiConfig) setChirpyRedHandler(w http.ResponseWriter, r *http.Request) {
+	var params struct {
+		Event string `json:"event"`
+		Data  struct {
+			UserID string `json:"user_id"`
+		} `json:"data"`
+	}
+
+	defer r.Body.Close()
+	if err := json.NewDecoder(r.Body).Decode(&params); err != nil {
+		log.Printf("Error decoding parameters: %s", err)
+		respondWithError(w, http.StatusInternalServerError, "Invalid request body")
+		return
+	}
+
+	if params.Event != "user.upgraded" {
+		log.Printf("Invalid event: %s", params.Event)
+		respondWithError(w, http.StatusNoContent, "Invalid event")
+		return
+	}
+
+	userID, err := uuid.Parse(params.Data.UserID)
+	if err != nil {
+		log.Printf("Error parsing user ID: %s", err)
+		respondWithError(w, http.StatusBadRequest, "Invalid user ID")
+		return
+	}
+
+	if err := cfg.db.SetChirpyRedByID(r.Context(), userID); err != nil {
+		log.Printf("Error setting Chirpy Red for user %s: %s", params.Data.UserID, err)
+		respondWithError(w, http.StatusNotFound, "Failed to set Chirpy Red")
+		return
+	}
+
+	w.WriteHeader(http.StatusNoContent)
+
 }
