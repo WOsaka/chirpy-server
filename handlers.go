@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"sort"
 	"sync/atomic"
 	"time"
 
@@ -188,11 +189,33 @@ func (cfg *apiConfig) createUserHandler(w http.ResponseWriter, r *http.Request) 
 }
 
 func (cfg *apiConfig) getChirpsHandler(w http.ResponseWriter, r *http.Request) {
-	dbChirps, err := cfg.db.GetAllChirps(r.Context())
-	if err != nil {
-		log.Printf("Error fetching chirps: %s", err)
-		respondWithError(w, http.StatusInternalServerError, "Failed to fetch chirps")
-		return
+	authorID := r.URL.Query().Get("author_id")
+	sorted := r.URL.Query().Get("sort")
+
+	var dbChirps []database.Chirp
+	var err error
+
+	if authorID != "" {
+		parsedAuthorID, err := uuid.Parse(authorID)
+		if err != nil {
+			log.Printf("Error parsing author ID: %s", err)
+			respondWithError(w, http.StatusBadRequest, "Invalid author_id")
+			return
+		}
+
+		dbChirps, err = cfg.db.GetChirpsByUserID(r.Context(), parsedAuthorID)
+		if err != nil {
+			log.Printf("Error fetching chirps by author ID: %s", err)
+			respondWithError(w, http.StatusInternalServerError, "Failed to fetch chirps")
+			return
+		}
+	} else {
+		dbChirps, err = cfg.db.GetAllChirps(r.Context())
+		if err != nil {
+			log.Printf("Error fetching chirps: %s", err)
+			respondWithError(w, http.StatusInternalServerError, "Failed to fetch chirps")
+			return
+		}
 	}
 
 	chirps := []Chirp{}
@@ -206,6 +229,17 @@ func (cfg *apiConfig) getChirpsHandler(w http.ResponseWriter, r *http.Request) {
 		}
 		chirps = append(chirps, chirp)
 	}
+
+	if sorted == "desc" {
+		sort.Slice(chirps, func(i, j int) bool {
+			return chirps[i].CreatedAt.After(chirps[j].CreatedAt)
+		})
+	} else if sorted == "asc" {
+		sort.Slice(chirps, func(i, j int) bool {
+			return chirps[i].CreatedAt.Before(chirps[j].CreatedAt)
+		})
+	}
+
 	if err := respondWithJSON(w, http.StatusOK, chirps); err != nil {
 		log.Printf("Error responding with JSON: %s", err)
 		return
